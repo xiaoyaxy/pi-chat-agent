@@ -9,7 +9,9 @@ build/
 */build/
 
 # Environment files
-.env.local
+.env
+.env.*
+!.env.example
 
 # Logs
 npm-debug.log*
@@ -47,6 +49,8 @@ Thumbs.db
 # Temporary folders
 tmp/
 temp/
+work/
+.wrangler/
 .playwright-cli/
 
 # Lock files (keep package-lock.json for consistent installs)

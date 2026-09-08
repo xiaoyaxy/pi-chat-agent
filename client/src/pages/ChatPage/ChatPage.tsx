@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { isAxiosError } from 'axios';
 import {
   Bot,
   Check,
@@ -34,17 +33,11 @@ interface ModelSettings {
   systemPrompt: string;
 }
 
-interface ApiErrorBody {
-  error?: {
-    message?: string;
-  };
-}
-
 const SETTINGS_STORAGE_KEY = 'pi-chat:model-settings';
 const MESSAGES_STORAGE_KEY = 'pi-chat:messages';
 const DEFAULT_SETTINGS: ModelSettings = {
   apiKey: '',
-  model: '~openai/gpt-latest',
+  model: 'openai/gpt-5.4-mini',
   systemPrompt: '你是一位友好、准确、简洁的 AI 助手。',
 };
 
@@ -180,14 +173,11 @@ const ChatPage = () => {
         response.message,
       ]);
     } catch (requestError: unknown) {
-      if (isAxiosError<ApiErrorBody>(requestError)) {
-        setError(
-          requestError.response?.data?.error?.message ??
-            '模型调用失败，请检查配置后重试。',
-        );
-      } else {
-        setError('模型调用失败，请稍后重试。');
-      }
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : '模型调用失败，请稍后重试。',
+      );
     } finally {
       setIsSending(false);
     }
@@ -447,7 +437,7 @@ const ChatPage = () => {
               <Input
                 id="model-id"
                 maxLength={160}
-                placeholder="~openai/gpt-latest"
+                placeholder="openai/gpt-5.4-mini"
                 value={draftSettings.model}
                 onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
                   setDraftSettings((current: ModelSettings) => ({
@@ -457,7 +447,7 @@ const ChatPage = () => {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                使用 OpenRouter 模型 slug，默认为最新 OpenAI 旗舰别名。
+                使用 OpenRouter 模型 slug，可随时更换并保存。
               </p>
             </div>
 

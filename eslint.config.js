@@ -31,6 +31,9 @@ module.exports = tseslint.config(
         },
       },
     },
+    rules: {
+      '@lark-apaas/require-app-container': 'off',
+    },
   },
   // Server configuration
   {
