@@ -26,13 +26,8 @@ module.exports = tseslint.config(
     },
     settings: {
       'import/resolver': {
-        alias: {
-          map: [
-            ['@', './client/src'],
-            ['@client', './client'],
-            ['@shared', './shared'],
-          ],
-          extensions: ['.js', '.jsx', '.ts', '.tsx'],
+        typescript: {
+          project: './tsconfig.app.json',
         },
       },
     },
@@ -50,9 +45,8 @@ module.exports = tseslint.config(
     },
     settings: {
       'import/resolver': {
-        alias: {
-          map: [['@server', './server'], ['@shared', './shared']],
-          extensions: ['.js', '.jsx', '.ts', '.tsx'],
+        typescript: {
+          project: './tsconfig.node.json',
         },
       }
     }
