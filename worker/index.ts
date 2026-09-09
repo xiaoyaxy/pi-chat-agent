@@ -21,13 +21,13 @@ interface Env {
   };
 }
 
-const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const MAX_BODY_BYTES = 256_000;
 const MAX_HISTORY_MESSAGES = 30;
 const MAX_MESSAGE_LENGTH = 8_000;
 const MAX_SYSTEM_PROMPT_LENGTH = 4_000;
 const MAX_MODEL_LENGTH = 160;
 const MAX_API_KEY_LENGTH = 512;
+const MAX_BASE_URL_LENGTH = 512;
 
 const EMPTY_USAGE: Usage = {
   input: 0,
@@ -62,13 +62,36 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-function createModel(modelId: string): Model<'openai-completions'> {
+function normalizeBaseUrl(value: string): string {
+  const trimmed = value.trim().replace(/\/+$/u, '');
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new HttpError(400, 'Base URL 无效。');
+  }
+  if (
+    url.protocol !== 'https:' ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new HttpError(400, 'Base URL 必须是无参数的 HTTPS 地址。');
+  }
+  return url.toString().replace(/\/+$/u, '');
+}
+
+function createModel(
+  modelId: string,
+  baseUrl: string,
+): Model<'openai-completions'> {
   return {
     id: modelId,
     name: modelId,
     api: 'openai-completions',
-    provider: 'openrouter',
-    baseUrl: OPENROUTER_BASE_URL,
+    provider: 'openai-compatible',
+    baseUrl,
     reasoning: false,
     input: ['text'],
     cost: {
@@ -125,11 +148,18 @@ function validateRequest(value: unknown): asserts value is ChatRequest {
 
   const request = value as Partial<ChatRequest>;
   if (
+    typeof request.baseUrl !== 'string' ||
+    request.baseUrl.trim().length === 0 ||
+    request.baseUrl.length > MAX_BASE_URL_LENGTH
+  ) {
+    throw new HttpError(400, '请填写有效的 Base URL。');
+  }
+  if (
     typeof request.apiKey !== 'string' ||
     request.apiKey.trim().length === 0 ||
     request.apiKey.length > MAX_API_KEY_LENGTH
   ) {
-    throw new HttpError(400, '请填写有效的 OpenRouter API Key。');
+    throw new HttpError(400, '请填写有效的 API Key。');
   }
   if (
     typeof request.model !== 'string' ||
@@ -175,15 +205,16 @@ function validateRequest(value: unknown): asserts value is ChatRequest {
 }
 
 async function createCompletion(request: ChatRequest): Promise<ChatResponse> {
+  const baseUrl = normalizeBaseUrl(request.baseUrl);
   const modelId = request.model.trim();
-  const model = createModel(modelId);
+  const model = createModel(modelId, baseUrl);
   const provider = createProvider({
-    id: 'openrouter',
-    name: 'OpenRouter',
-    baseUrl: OPENROUTER_BASE_URL,
+    id: 'openai-compatible',
+    name: 'OpenAI-compatible',
+    baseUrl,
     auth: {
       apiKey: {
-        name: 'OpenRouter API key',
+        name: 'API key',
         resolve: async () => ({ auth: {} }),
       },
     },

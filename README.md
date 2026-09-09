@@ -4,10 +4,10 @@
 
 ## 功能
 
-- 在界面配置 OpenRouter API Key、模型 ID 和系统提示词
+- 在界面配置 OpenAI 兼容接口的 Base URL、API Key、模型 ID 和系统提示词
 - 设置与对话历史保存在浏览器 `localStorage`
 - API Key 仅在请求时传给 Worker，不写入数据库或服务端配置
-- 使用 Pi Agent Core 调用 OpenRouter 的 OpenAI 兼容接口
+- 使用 Pi Agent Core 调用任意 OpenAI 兼容接口
 - 支持 Cloudflare 单域名部署，不依赖飞书或妙搭登录
 
 ## 本地运行
@@ -43,4 +43,4 @@ npm run deploy:cloudflare
 
 ## 安全说明
 
-不要把 OpenRouter API Key 写入仓库、Wrangler 配置或 GitHub Actions 日志。用户应在网页模型设置中填写自己的 Key。
+不要把模型 API Key 写入仓库、Wrangler 配置或 GitHub Actions 日志。用户应在网页模型设置中填写自己的 Base URL 和 Key。

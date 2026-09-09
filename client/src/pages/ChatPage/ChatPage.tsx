@@ -28,6 +28,7 @@ import { createChatCompletion } from '@client/src/api';
 import type { ChatMessage, ChatRequest } from '@shared/api.interface';
 
 interface ModelSettings {
+  baseUrl: string;
   apiKey: string;
   model: string;
   systemPrompt: string;
@@ -36,6 +37,7 @@ interface ModelSettings {
 const SETTINGS_STORAGE_KEY = 'pi-chat:model-settings';
 const MESSAGES_STORAGE_KEY = 'pi-chat:messages';
 const DEFAULT_SETTINGS: ModelSettings = {
+  baseUrl: 'https://openrouter.ai/api/v1',
   apiKey: '',
   model: 'openai/gpt-5.4-mini',
   systemPrompt: '你是一位友好、准确、简洁的 AI 助手。',
@@ -51,6 +53,10 @@ function readSettings(): ModelSettings {
     const candidate = parsed as Partial<ModelSettings>;
 
     return {
+      baseUrl:
+        typeof candidate.baseUrl === 'string' && candidate.baseUrl
+          ? candidate.baseUrl
+          : DEFAULT_SETTINGS.baseUrl,
       apiKey: typeof candidate.apiKey === 'string' ? candidate.apiKey : '',
       model:
         typeof candidate.model === 'string' && candidate.model
@@ -63,6 +69,25 @@ function readSettings(): ModelSettings {
     };
   } catch {
     return DEFAULT_SETTINGS;
+  }
+}
+
+function normalizeBaseUrl(value: string): string | undefined {
+  const trimmed = value.trim().replace(/\/+$/u, '');
+  try {
+    const url = new URL(trimmed);
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      return undefined;
+    }
+    return url.toString().replace(/\/+$/u, '');
+  } catch {
+    return undefined;
   }
 }
 
@@ -90,8 +115,7 @@ function readMessages(): ChatMessage[] {
 
 const ChatPage = () => {
   const [settings, setSettings] = useState<ModelSettings>(readSettings);
-  const [draftSettings, setDraftSettings] =
-    useState<ModelSettings>(settings);
+  const [draftSettings, setDraftSettings] = useState<ModelSettings>(settings);
   const [messages, setMessages] = useState<ChatMessage[]>(readMessages);
   const [input, setInput] = useState<string>('');
   const [error, setError] = useState<string>('');
@@ -102,17 +126,11 @@ const ChatPage = () => {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    window.localStorage.setItem(
-      SETTINGS_STORAGE_KEY,
-      JSON.stringify(settings),
-    );
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
   }, [settings]);
 
   useEffect(() => {
-    window.localStorage.setItem(
-      MESSAGES_STORAGE_KEY,
-      JSON.stringify(messages),
-    );
+    window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(messages));
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
@@ -122,12 +140,18 @@ const ChatPage = () => {
   };
 
   const saveSettings = () => {
+    const baseUrl = normalizeBaseUrl(draftSettings.baseUrl);
+    if (!baseUrl) {
+      setError('Base URL 必须是无参数的 HTTPS 地址。');
+      return;
+    }
     if (!draftSettings.apiKey.trim() || !draftSettings.model.trim()) {
-      setError('请填写 API Key 和模型 ID。');
+      setError('请填写 Base URL、API Key 和模型 ID。');
       return;
     }
 
     setSettings({
+      baseUrl,
       apiKey: draftSettings.apiKey.trim(),
       model: draftSettings.model.trim(),
       systemPrompt: draftSettings.systemPrompt.trim(),
@@ -146,7 +170,7 @@ const ChatPage = () => {
     if (!prompt || isSending) return;
     if (!settings.apiKey) {
       openSettings();
-      setError('先配置 OpenRouter API Key 才能开始对话。');
+      setError('先配置 Base URL、API Key 和模型 ID 才能开始对话。');
       return;
     }
 
@@ -168,10 +192,7 @@ const ChatPage = () => {
 
     try {
       const response = await createChatCompletion(request);
-      setMessages((current: ChatMessage[]) => [
-        ...current,
-        response.message,
-      ]);
+      setMessages((current: ChatMessage[]) => [...current, response.message]);
     } catch (requestError: unknown) {
       setError(
         requestError instanceof Error
@@ -219,6 +240,9 @@ const ChatPage = () => {
             模型配置
           </div>
           <p className="truncate text-sm text-slate-300">{settings.model}</p>
+          <p className="mt-1 truncate text-xs text-slate-500">
+            {settings.baseUrl}
+          </p>
           <p className="mt-1 text-xs text-slate-500">
             {settings.apiKey ? '已保存在当前浏览器' : '等待配置'}
           </p>
@@ -279,21 +303,24 @@ const ChatPage = () => {
                 </h2>
                 <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground">
                   这是一个基于 Pi Agent Core 的最小对话智能体。
-                  先在模型设置中保存 OpenRouter Key 和模型 ID，即可开始。
+                  先在模型设置中保存兼容接口的 Base URL、API Key 和模型
+                  ID，即可开始。
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-2">
-                  {['介绍一下你自己', '帮我拆解一个目标', '给我一个今日灵感'].map(
-                    (suggestion: string) => (
-                      <Button
-                        key={suggestion}
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setInput(suggestion)}
-                      >
-                        {suggestion}
-                      </Button>
-                    ),
-                  )}
+                  {[
+                    '介绍一下你自己',
+                    '帮我拆解一个目标',
+                    '给我一个今日灵感',
+                  ].map((suggestion: string) => (
+                    <Button
+                      key={suggestion}
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setInput(suggestion)}
+                    >
+                      {suggestion}
+                    </Button>
+                  ))}
                 </div>
               </div>
             ) : (
@@ -402,14 +429,36 @@ const ChatPage = () => {
           <DialogHeader>
             <DialogTitle>模型设置</DialogTitle>
             <DialogDescription>
-              通过 OpenRouter 使用任意可用的对话模型。配置将保存在当前浏览器。
+              支持任意 OpenAI 兼容接口，配置将保存在当前浏览器。
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-5 py-2">
             <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="base-url">
+                Base URL
+              </label>
+              <Input
+                id="base-url"
+                autoComplete="url"
+                maxLength={512}
+                placeholder="https://openrouter.ai/api/v1"
+                value={draftSettings.baseUrl}
+                onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                  setDraftSettings((current: ModelSettings) => ({
+                    ...current,
+                    baseUrl: event.target.value,
+                  }))
+                }
+              />
+              <p className="text-xs text-muted-foreground">
+                填写 OpenAI 兼容接口的地址，通常以 /v1 结尾。
+              </p>
+            </div>
+
+            <div className="space-y-2">
               <label className="text-sm font-medium" htmlFor="api-key">
-                OpenRouter API Key
+                API Key
               </label>
               <Input
                 id="api-key"
@@ -447,7 +496,7 @@ const ChatPage = () => {
                 }
               />
               <p className="text-xs text-muted-foreground">
-                使用 OpenRouter 模型 slug，可随时更换并保存。
+                填写对应接口支持的模型 ID，可随时更换并保存。
               </p>
             </div>
 
@@ -471,9 +520,7 @@ const ChatPage = () => {
 
             <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
               <Check className="mt-0.5 size-4 shrink-0" />
-              <p>
-                对话历史也保存在当前浏览器；点击“新对话”即可清空。
-              </p>
+              <p>对话历史也保存在当前浏览器；点击“新对话”即可清空。</p>
             </div>
           </div>
 
