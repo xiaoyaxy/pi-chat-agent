@@ -6,11 +6,7 @@ import {
 } from '@nestjs/common';
 
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
-import type {
-  AssistantMessage,
-  Model,
-  Usage,
-} from '@earendil-works/pi-ai';
+import type { AssistantMessage, Model, Usage } from '@earendil-works/pi-ai';
 import type {
   ChatMessage,
   ChatRequest,
@@ -19,12 +15,12 @@ import type {
 
 import { loadPiRuntime } from './pi-runtime';
 
-const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const MAX_HISTORY_MESSAGES = 30;
 const MAX_MESSAGE_LENGTH = 8_000;
 const MAX_SYSTEM_PROMPT_LENGTH = 4_000;
 const MAX_MODEL_LENGTH = 160;
 const MAX_API_KEY_LENGTH = 512;
+const MAX_BASE_URL_LENGTH = 512;
 
 const EMPTY_USAGE: Usage = {
   input: 0,
@@ -48,7 +44,11 @@ export class ChatService {
   async createCompletion(request: ChatRequest): Promise<ChatResponse> {
     this.validateRequest(request);
 
-    const model: Model<'openai-completions'> = this.createModel(request.model);
+    const baseUrl = this.normalizeBaseUrl(request.baseUrl);
+    const model: Model<'openai-completions'> = this.createModel(
+      request.model,
+      baseUrl,
+    );
     const history: AgentMessage[] = this.toAgentMessages(
       request.messages.slice(-MAX_HISTORY_MESSAGES),
       model,
@@ -56,12 +56,12 @@ export class ChatService {
     const piRuntime = loadPiRuntime();
 
     const provider = piRuntime.createProvider({
-      id: 'openrouter',
-      name: 'OpenRouter',
-      baseUrl: OPENROUTER_BASE_URL,
+      id: 'openai-compatible',
+      name: 'OpenAI-compatible',
+      baseUrl,
       auth: {
         apiKey: {
-          name: 'OpenRouter API key',
+          name: 'API key',
           resolve: async () => ({ auth: {} }),
         },
       },
@@ -88,9 +88,12 @@ export class ChatService {
     );
     await agent.prompt(request.prompt.trim());
 
-    const assistantMessage = this.findLastAssistantMessage(agent.state.messages);
+    const assistantMessage = this.findLastAssistantMessage(
+      agent.state.messages,
+    );
     if (!assistantMessage || assistantMessage.stopReason === 'error') {
-      const providerError = assistantMessage?.errorMessage ?? agent.state.errorMessage;
+      const providerError =
+        assistantMessage?.errorMessage ?? agent.state.errorMessage;
       this.logger.warn(
         `Pi turn failed for model=${request.model}: ${providerError ?? 'unknown error'}`,
       );
@@ -124,15 +127,18 @@ export class ChatService {
     };
   }
 
-  private createModel(modelId: string): Model<'openai-completions'> {
+  private createModel(
+    modelId: string,
+    baseUrl: string,
+  ): Model<'openai-completions'> {
     const trimmedModelId = modelId.trim();
 
     return {
       id: trimmedModelId,
       name: trimmedModelId,
       api: 'openai-completions',
-      provider: 'openrouter',
-      baseUrl: OPENROUTER_BASE_URL,
+      provider: 'openai-compatible',
+      baseUrl,
       reasoning: false,
       input: ['text'],
       cost: {
@@ -190,11 +196,18 @@ export class ChatService {
       throw new BadRequestException('请求体无效。');
     }
     if (
+      typeof request.baseUrl !== 'string' ||
+      request.baseUrl.trim().length === 0 ||
+      request.baseUrl.length > MAX_BASE_URL_LENGTH
+    ) {
+      throw new BadRequestException('请填写有效的 Base URL。');
+    }
+    if (
       typeof request.apiKey !== 'string' ||
       request.apiKey.trim().length === 0 ||
       request.apiKey.length > MAX_API_KEY_LENGTH
     ) {
-      throw new BadRequestException('请填写有效的 OpenRouter API Key。');
+      throw new BadRequestException('请填写有效的 API Key。');
     }
     if (
       typeof request.model !== 'string' ||
@@ -236,5 +249,25 @@ export class ChatService {
     if (hasInvalidMessage) {
       throw new BadRequestException('对话历史中包含无效消息。');
     }
+  }
+
+  private normalizeBaseUrl(value: string): string {
+    const trimmed = value.trim().replace(/\/+$/u, '');
+    let url: URL;
+    try {
+      url = new URL(trimmed);
+    } catch {
+      throw new BadRequestException('Base URL 无效。');
+    }
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      throw new BadRequestException('Base URL 必须是无参数的 HTTPS 地址。');
+    }
+    return url.toString().replace(/\/+$/u, '');
   }
 }

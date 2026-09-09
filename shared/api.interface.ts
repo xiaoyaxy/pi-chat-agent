@@ -7,6 +7,7 @@ export interface ChatMessage {
 }
 
 export interface ChatRequest {
+  baseUrl: string;
   apiKey: string;
   model: string;
   systemPrompt: string;
